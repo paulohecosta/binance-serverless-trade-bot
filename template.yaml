@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Sample SAM Template for Serverless Binacce AWS Bot
+
+Parameters:
+  BinanceApiKey: 
+    Type: String
+  BinanceApiSecret: 
+    Type: String
+  TelegramToken: 
+    Type: String
+  TelegramChatId: 
+    Type: String
+
+Resources:
+  # ROLES
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub '${AWS::StackName}-lambda-role'
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement: 
+          Effect: 'Allow'
+          Principal: 
+            Service: 
+              - 'lambda.amazonaws.com'
+          Action: 
+            - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+          - PolicyName: AllowLambdaGlobal
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: 'Allow'
+                  Action:
+                    - 'dynamodb:*'
+                    - 'ses:*'
+                    - 'logs:CreateLogGroup'
+                    - 'logs:CreateLogStream'
+                    - 'logs:PutLogEvents'
+                    - 'logs:DescribeLogStreams'
+                  Resource: '*'
+
+  # TABLES
+  CoinTradeTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: !Sub '${AWS::StackName}-trades'
+      AttributeDefinitions: 
+        - 
+          AttributeName: "symbol"
+          AttributeType: "S"
+        - 
+          AttributeName: "uid"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "symbol"
+          KeyType: "HASH"
+        - 
+          AttributeName: "uid"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "2"
+
+  RemoteConfigTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: !Sub '${AWS::StackName}-config'
+      AttributeDefinitions: 
+        - 
+          AttributeName: "name"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "name"
+          KeyType: "HASH"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+
+  # LAMBDAS
+  CoinSeller:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-coin-seller'
+      Description: Coin Seller for Binance AWS Bot
+      CodeUri: ./app/coin-seller
+      Handler: index.lambdaHandler
+      Runtime: nodejs14.x
+      Timeout: 900
+      Role: !GetAtt LambdaRole.Arn
+      Layers:
+        - !Ref CustomLayer
+      Events:
+        Cron:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-coin-seller-cron'
+            Input: '{"job": "coin-seller"}'
+            Schedule: cron(0/2 * * * ? *)
+      Environment:
+        Variables:
+          BINANCE_API_KEY: !Ref BinanceApiKey
+          BINANCE_API_SECRET: !Ref BinanceApiSecret
+          TELEGRAM_TOKEN: !Ref TelegramToken
+          TELEGRAM_CHAT_ID: !Ref TelegramChatId
+          CONFIG_TABLE: !Ref RemoteConfigTable
+          TRADES_TABLE: !Ref CoinTradeTable
+
+  CoinBuyer:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-coin-buyer'
+      Description: Coin Buyer for Binance AWS Bot
+      CodeUri: ./app/coin-buyer
+      Handler: index.lambdaHandler
+      Runtime: nodejs14.x
+      Timeout: 900
+      Role: !GetAtt LambdaRole.Arn
+      Layers:
+        - !Ref CustomLayer
+      Events:
+        Cron:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-coin-buyer-cron'
+            Input: '{"job": "coin-buyer"}'
+            Schedule: cron(0/10 * * * ? *)
+      Environment:
+        Variables:
+          BINANCE_API_KEY: !Ref BinanceApiKey
+          BINANCE_API_SECRET: !Ref BinanceApiSecret
+          TELEGRAM_TOKEN: !Ref TelegramToken
+          TELEGRAM_CHAT_ID: !Ref TelegramChatId
+          CONFIG_TABLE: !Ref RemoteConfigTable
+          TRADES_TABLE: !Ref CoinTradeTable
+
+  ClearDynamoTable:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-clear-table'
+      Description: Clear DynamoDB to Avoid charges if you forget this for a year
+      CodeUri: ./app/clear-table
+      Handler: index.lambdaHandler
+      Runtime: nodejs14.x
+      Timeout: 900
+      Role: !GetAtt LambdaRole.Arn
+      Layers:
+        - !Ref CustomLayer
+      Events:
+        Cron:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-clear-db-cron'
+            Input: '{"job": "clear-db-cron"}'
+            Schedule: cron(0 0 * * ? *)
+      Environment:
+        Variables:
+          BINANCE_API_KEY: !Ref BinanceApiKey
+          BINANCE_API_SECRET: !Ref BinanceApiSecret
+          TELEGRAM_TOKEN: !Ref TelegramToken
+          TELEGRAM_CHAT_ID: !Ref TelegramChatId
+          CONFIG_TABLE: !Ref RemoteConfigTable
+          TRADES_TABLE: !Ref CoinTradeTable
+  
+  # LAYER
+  CustomLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+        LayerName: !Sub '${AWS::StackName}-layer'
+        Description: Dependencies for Binacce AWS Bot
+        ContentUri: ./app/_layer/
+        CompatibleRuntimes:
+          - nodejs14.x
+        LicenseInfo: 'MIT'
+        RetentionPolicy: Retain
+
+  # LOGS
+  CoinSellerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['/', ['/aws/lambda', !Ref CoinSeller]]
+      RetentionInDays: 5
+
+  CoinBuyerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['/', ['/aws/lambda', !Ref CoinBuyer]]
+      RetentionInDays: 5
+
+  ClearDynamoTableLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['/', ['/aws/lambda', !Ref ClearDynamoTable]]
+      RetentionInDays: 30

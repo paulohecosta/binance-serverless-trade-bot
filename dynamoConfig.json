@@ -1,0 +1,14 @@
+{
+    "name": "CONFIG",
+    "swap_value": 20,
+    "trade_coins": "ETH,DOGE,ADA,SOL,XRP,DOT,LUNA,AVAX,LTC",
+    "buy_declive_coef": -0.05,
+    "sell_coef": 0.01,
+    "swap_coin": "USDT",
+    "buy_toogle": "ON",
+    "sell_toogle": "ON",
+    "buy_coef": 0.6,
+    "buy_curve_coef": 0.2,
+    "buy_periods": 288,
+    "telegram_toogle": "ON"
+}

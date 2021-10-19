@@ -1,0 +1,8 @@
+{
+    "Parameters": {
+        "BinanceApiKey": "***",
+        "BinanceApiSecret": "***",
+        "TelegramToken": "***",
+        "TelegramChatId": "***"
+    }
+}
